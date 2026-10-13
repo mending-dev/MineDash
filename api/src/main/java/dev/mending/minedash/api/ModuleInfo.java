@@ -15,6 +15,7 @@ public class ModuleInfo {
     private String frontend;
     private List<String> authors = new ArrayList<>();
     private List<String> dependencies = new ArrayList<>();
+    private List<WidgetInfo> widgets = new ArrayList<>();
 
     public String getId() {
         return id;
@@ -52,5 +53,10 @@ public class ModuleInfo {
     /** Ids of modules that must be enabled before this one. */
     public List<String> getDependencies() {
         return dependencies == null ? new ArrayList<String>() : dependencies;
+    }
+
+    /** Overview widgets of this module. Requires a frontend. */
+    public List<WidgetInfo> getWidgets() {
+        return widgets == null ? new ArrayList<WidgetInfo>() : widgets;
     }
 }

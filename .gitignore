@@ -16,6 +16,10 @@ out/
 !**/src/main/**/out/
 !**/src/test/**/out/
 
+### Node.js ###
+**/node_modules/
+**/dist/
+
 ### Kotlin ###
 .kotlin
 

@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+/* Class based dark mode, toggled by lib/theme.svelte.ts */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens. Module frontends use these CSS variables as well,
+ * so they follow the panel theme automatically.
+ */
+:root {
+    color-scheme: light;
+    --md-bg: #f8fafc;
+    --md-surface: #ffffff;
+    --md-surface-2: #f1f5f9;
+    --md-border: #e2e8f0;
+    --md-text: #0f172a;
+    --md-muted: #64748b;
+    --md-accent: #059669; /* emerald-600 */
+    --md-accent-hover: #047857; /* emerald-700 */
+    --md-accent-fg: #ffffff;
+    --md-danger: #dc2626;
+    --md-warning: #b45309;
+    --md-info: #0369a1;
+    --md-radius: 0.75rem;
+    --md-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+:root.dark {
+    color-scheme: dark;
+    --md-bg: #0b0f14;
+    --md-surface: #11161d;
+    --md-surface-2: #1a212b;
+    --md-border: #263040;
+    --md-text: #e6edf3;
+    --md-muted: #8b98a9;
+    --md-accent: #10b981; /* emerald-500 */
+    --md-accent-hover: #34d399; /* emerald-400 */
+    --md-accent-fg: #022c22;
+    --md-danger: #f87171;
+    --md-warning: #fbbf24;
+    --md-info: #38bdf8;
+}
+
+/* Expose the tokens as Tailwind colors: bg-surface, text-fg, border-line, ... */
+@theme inline {
+    --color-bg: var(--md-bg);
+    --color-surface: var(--md-surface);
+    --color-surface-2: var(--md-surface-2);
+    --color-line: var(--md-border);
+    --color-fg: var(--md-text);
+    --color-muted: var(--md-muted);
+    --color-accent: var(--md-accent);
+    --color-accent-hover: var(--md-accent-hover);
+    --color-accent-fg: var(--md-accent-fg);
+    --color-danger: var(--md-danger);
+}
+
+html,
+body,
+#app {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--md-bg);
+    color: var(--md-text);
+    -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+    .md-btn {
+        @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition outline-none select-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:cursor-not-allowed disabled:opacity-50;
+    }
+    .md-btn-primary {
+        @apply bg-accent text-accent-fg hover:bg-accent-hover;
+    }
+    .md-btn-secondary {
+        @apply border border-line bg-surface text-fg hover:bg-surface-2;
+    }
+    .md-input {
+        @apply w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm text-fg outline-none transition placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/30;
+    }
+}

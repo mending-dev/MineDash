@@ -3,8 +3,12 @@
   "name": "Console",
   "version": "${version}",
   "description": "Live server console with command execution",
-  "authors": ["MrMending"],
+  "authors": ["Mending"],
   "main": "dev.mending.minedash.modules.console.ConsoleModule",
   "apiVersion": 1,
+  "frontend": "console.js",
+  "widgets": [
+    { "id": "latest", "title": "Console output", "size": "medium", "permission": "console.view" }
+  ],
   "dependencies": []
 }

@@ -4,12 +4,16 @@ import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import dev.mending.minedash.api.MineDashApi;
 import dev.mending.minedash.api.ModuleInfo;
+import dev.mending.minedash.api.WidgetInfo;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.regex.Pattern;
@@ -18,6 +22,7 @@ import java.util.regex.Pattern;
 final class ModuleLoader {
 
     private static final Pattern ID_PATTERN = Pattern.compile("[a-z0-9_-]{1,32}");
+    private static final Set<String> WIDGET_SIZES = new HashSet<>(Arrays.asList("small", "medium", "large"));
     private static final Gson GSON = new Gson();
 
     private ModuleLoader() {
@@ -61,6 +66,28 @@ final class ModuleLoader {
         String frontend = info.getFrontend();
         if (frontend != null && (frontend.contains("..") || frontend.contains("\\") || frontend.startsWith("/"))) {
             throw new ModuleException("'frontend' must be a relative path without '..'");
+        }
+        validateWidgets(info);
+    }
+
+    private static void validateWidgets(ModuleInfo info) throws ModuleException {
+        if (!info.getWidgets().isEmpty() && info.getFrontend() == null) {
+            throw new ModuleException("'widgets' require a 'frontend'");
+        }
+        Set<String> ids = new HashSet<>();
+        for (WidgetInfo widget : info.getWidgets()) {
+            if (widget == null || widget.getId() == null || !ID_PATTERN.matcher(widget.getId()).matches()) {
+                throw new ModuleException("Widget ids must match [a-z0-9_-] and be 1-32 characters long");
+            }
+            if (!ids.add(widget.getId())) {
+                throw new ModuleException("Duplicate widget id '" + widget.getId() + "'");
+            }
+            if (isBlank(widget.getTitle())) {
+                throw new ModuleException("Widget '" + widget.getId() + "' needs a 'title'");
+            }
+            if (!WIDGET_SIZES.contains(widget.getSize())) {
+                throw new ModuleException("Widget '" + widget.getId() + "': 'size' must be small, medium or large");
+            }
         }
     }
 

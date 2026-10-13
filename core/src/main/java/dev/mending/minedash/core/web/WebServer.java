@@ -5,6 +5,7 @@ import dev.mending.minedash.core.auth.SessionManager;
 import dev.mending.minedash.core.auth.User;
 import dev.mending.minedash.core.auth.UserStore;
 import dev.mending.minedash.core.config.MineDashConfig;
+import dev.mending.minedash.core.metrics.MetricsCollector;
 import dev.mending.minedash.core.module.ModuleManager;
 import io.javalin.Javalin;
 import io.javalin.http.UnauthorizedResponse;
@@ -19,18 +20,21 @@ public final class WebServer {
     private final SessionManager sessions;
     private final LoginRateLimiter limiter;
     private final ModuleManager modules;
+    private final MetricsCollector metrics;
     private final Plugin plugin;
     private final Logger logger;
 
     private Javalin app;
 
     public WebServer(MineDashConfig config, UserStore users, SessionManager sessions,
-                     LoginRateLimiter limiter, ModuleManager modules, Plugin plugin, Logger logger) {
+                     LoginRateLimiter limiter, ModuleManager modules, MetricsCollector metrics,
+                     Plugin plugin, Logger logger) {
         this.config = config;
         this.users = users;
         this.sessions = sessions;
         this.limiter = limiter;
         this.modules = modules;
+        this.metrics = metrics;
         this.plugin = plugin;
         this.logger = logger;
     }
@@ -65,6 +69,7 @@ public final class WebServer {
             });
 
             new AuthRoutes(users, sessions, limiter, config.auth, logger).register(app);
+            new OverviewRoutes(metrics).register(app);
             new ModuleRoutes(modules, users, sessions, plugin, logger).register(app);
 
             // Must be registered last, it is the catch-all for the frontend

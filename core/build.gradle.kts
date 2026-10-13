@@ -2,6 +2,9 @@ plugins {
     id("com.gradleup.shadow") version "9.2.2"
 }
 
+// Adds the tasks npmInstall and buildFrontend for core/frontend
+apply(from = rootProject.file("gradle/frontend.gradle.kts"))
+
 dependencies {
     compileOnly("org.spigotmc:spigot-api:1.8.8-R0.1-SNAPSHOT")
     implementation(project(":api"))
@@ -19,6 +22,11 @@ tasks.processResources {
     inputs.property("version", version)
     filesMatching("plugin.yml") {
         expand("version" to version)
+    }
+
+    // Bundle the built panel into the jar under /web
+    from(tasks.named("buildFrontend")) {
+        into("web")
     }
 }
 

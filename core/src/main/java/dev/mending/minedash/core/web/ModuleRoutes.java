@@ -4,6 +4,7 @@ import dev.mending.minedash.api.ApiException;
 import dev.mending.minedash.api.HttpMethod;
 import dev.mending.minedash.api.ModuleInfo;
 import dev.mending.minedash.api.WebSocketHandler;
+import dev.mending.minedash.api.WidgetInfo;
 import dev.mending.minedash.core.auth.SessionManager;
 import dev.mending.minedash.core.auth.User;
 import dev.mending.minedash.core.auth.UserStore;
@@ -45,6 +46,20 @@ public final class ModuleRoutes {
     private static final String MODULE_PREFIX = "/api/modules/";
     private static final String MANAGE_PERMISSION = "modules.manage";
 
+    private static final class WidgetView {
+        final String id;
+        final String title;
+        final String size;
+        final String permission;
+
+        WidgetView(WidgetInfo info) {
+            this.id = info.getId();
+            this.title = info.getTitle();
+            this.size = info.getSize();
+            this.permission = info.getPermission();
+        }
+    }
+
     private static final class ModuleView {
         final String id;
         final String name;
@@ -52,6 +67,7 @@ public final class ModuleRoutes {
         final String description;
         final List<String> authors;
         final List<String> dependencies;
+        final List<WidgetView> widgets;
         final String state;
         final String error;
         /** URL of the frontend entry file, only present while the module is enabled. */
@@ -65,6 +81,10 @@ public final class ModuleRoutes {
             this.description = info.getDescription();
             this.authors = new ArrayList<>(info.getAuthors());
             this.dependencies = new ArrayList<>(info.getDependencies());
+            this.widgets = new ArrayList<>();
+            for (WidgetInfo widget : info.getWidgets()) {
+                this.widgets.add(new WidgetView(widget));
+            }
             this.state = module.getState().name().toLowerCase(Locale.ROOT);
             this.error = module.getError();
             this.frontend = module.getState() == ModuleState.ENABLED && info.getFrontend() != null

@@ -1,3 +1,6 @@
+// Adds the tasks npmInstall and buildFrontend for modules/console/frontend
+apply(from = rootProject.file("gradle/frontend.gradle.kts"))
+
 dependencies {
     // Modules only depend on the API, never on core
     compileOnly(project(":api"))
@@ -11,5 +14,10 @@ tasks.processResources {
     inputs.property("version", version)
     filesMatching("module.json") {
         expand("version" to version)
+    }
+
+    // Bundle the module frontend into the jar under /web
+    from(tasks.named("buildFrontend")) {
+        into("web")
     }
 }
