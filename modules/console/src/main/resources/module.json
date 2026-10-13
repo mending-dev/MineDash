@@ -1,0 +1,10 @@
+{
+  "id": "console",
+  "name": "Console",
+  "version": "${version}",
+  "description": "Live server console with command execution",
+  "authors": ["MrMending"],
+  "main": "dev.mending.minedash.modules.console.ConsoleModule",
+  "apiVersion": 1,
+  "dependencies": []
+}

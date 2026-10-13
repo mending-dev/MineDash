@@ -1,4 +1,8 @@
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
-}
-rootProject.name = "minedash"
+rootProject.name = "MineDash"
+
+include("api", "core")
+
+// Auto-register every folder inside /modules as a Gradle subproject
+file("modules").listFiles()
+    ?.filter { it.isDirectory && File(it, "build.gradle.kts").exists() }
+    ?.forEach { include(":modules:${it.name}") }

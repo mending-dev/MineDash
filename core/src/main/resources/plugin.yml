@@ -1,0 +1,5 @@
+name: MineDash
+version: ${version}
+main: dev.mending.minedash.core.MineDashPlugin
+author: MrMending
+description: Modular web panel for Minecraft servers
