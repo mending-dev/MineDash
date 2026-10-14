@@ -7,8 +7,5 @@
   "main": "dev.mending.minedash.modules.console.ConsoleModule",
   "apiVersion": 1,
   "frontend": "console.js",
-  "widgets": [
-    { "id": "latest", "title": "Console output", "size": "medium", "permission": "console.view" }
-  ],
   "dependencies": []
 }

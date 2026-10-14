@@ -39,14 +39,16 @@ public final class AuthRoutes {
     private final SessionManager sessions;
     private final LoginRateLimiter limiter;
     private final MineDashConfig.Auth authConfig;
+    private final WebSecurity security;
     private final Logger logger;
 
     public AuthRoutes(UserStore users, SessionManager sessions, LoginRateLimiter limiter,
-                      MineDashConfig.Auth authConfig, Logger logger) {
+                      MineDashConfig.Auth authConfig, WebSecurity security, Logger logger) {
         this.users = users;
         this.sessions = sessions;
         this.limiter = limiter;
         this.authConfig = authConfig;
+        this.security = security;
         this.logger = logger;
     }
 
@@ -57,8 +59,9 @@ public final class AuthRoutes {
     }
 
     private void login(Context ctx) {
-        String ip = ctx.ip();
+        String ip = security.clientIp(ctx);
         if (limiter.isBlocked(ip)) {
+            ctx.header("Retry-After", String.valueOf(authConfig.lockoutMinutes * 60));
             ctx.status(429).result("Too many login attempts, try again later");
             return;
         }
@@ -99,7 +102,7 @@ public final class AuthRoutes {
     }
 
     private void setCookie(Context ctx, String value, boolean expire) {
-        // No Max-Age: cookie lives until the browser closes, the server enforces the timeout
+        // No Max-Age: cookie lives until the browser closes, the server enforces the timeouts
         StringBuilder cookie = new StringBuilder(COOKIE_NAME).append('=').append(value)
                 .append("; Path=/; HttpOnly; SameSite=Strict");
         if (expire) cookie.append("; Max-Age=0");

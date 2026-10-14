@@ -39,8 +39,13 @@ final class WsConnection implements WebSocketConnection {
 
     @Override
     public void close() {
+        closeWith(1000, "Closed by server");
+    }
+
+    /** Closes with a specific code. The panel reacts to 4401 by returning to the login. */
+    void closeWith(int code, String reason) {
         open = false;
-        ctx.closeSession(1000, "Closed by server");
+        ctx.closeSession(code, reason);
     }
 
     void markClosed() {

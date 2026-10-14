@@ -10,6 +10,7 @@ import dev.mending.minedash.core.module.ModuleManager;
 import dev.mending.minedash.core.web.WebServer;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.net.BindException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
@@ -23,17 +24,25 @@ public class MineDashPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        if (isFolia()) {
+            getLogger().severe("Folia is not supported by MineDash. Use Spigot or Paper.");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+
+        MineDashConfig config = null;
         try {
             Path dataDir = getDataFolder().toPath();
             Files.createDirectories(dataDir);
 
-            MineDashConfig config = new ConfigManager(dataDir.resolve("config.json")).load();
+            config = new ConfigManager(dataDir.resolve("config.json")).load();
 
             UserStore users = new UserStore(dataDir.resolve("users.json"), getLogger());
             users.load();
 
             SessionManager sessions = new SessionManager(
-                    TimeUnit.MINUTES.toMillis(config.auth.sessionTimeoutMinutes));
+                    TimeUnit.MINUTES.toMillis(config.auth.sessionTimeoutMinutes),
+                    TimeUnit.HOURS.toMillis(config.auth.maxSessionHours));
             LoginRateLimiter limiter = new LoginRateLimiter(
                     config.auth.maxLoginAttempts, TimeUnit.MINUTES.toMillis(config.auth.lockoutMinutes));
 
@@ -47,8 +56,14 @@ public class MineDashPlugin extends JavaPlugin {
             webServer.start();
 
             getLogger().info("Web panel running on port " + config.web.port);
+            warnIfUnencrypted(config);
         } catch (Exception e) {
-            getLogger().log(Level.SEVERE, "Failed to start MineDash, disabling plugin", e);
+            if (hasCause(e, BindException.class)) {
+                getLogger().severe("Cannot start the web panel: port " + (config != null ? config.web.port : "?")
+                        + " is already in use or not allowed. Change 'web.port' in plugins/MineDash/config.json.");
+            } else {
+                getLogger().log(Level.SEVERE, "Failed to start MineDash, disabling plugin", e);
+            }
             getServer().getPluginManager().disablePlugin(this);
         }
     }
@@ -66,5 +81,34 @@ public class MineDashPlugin extends JavaPlugin {
             moduleManager.shutdown();
         }
         getLogger().info("MineDash disabled.");
+    }
+
+    private void warnIfUnencrypted(MineDashConfig config) {
+        String host = config.web.host;
+        boolean loopback = host.equals("127.0.0.1") || host.equals("localhost") || host.equals("::1");
+        if (!loopback && !config.auth.secureCookie) {
+            getLogger().warning("The panel is served over plain HTTP, so passwords are sent unencrypted. "
+                    + "For public servers use an HTTPS reverse proxy (see 'web.host', 'web.trustProxy' "
+                    + "and 'auth.secureCookie' in config.json).");
+        }
+    }
+
+    private static boolean isFolia() {
+        try {
+            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
+    private static boolean hasCause(Throwable error, Class<? extends Throwable> type) {
+        int depth = 0;
+        for (Throwable t = error; t != null && depth < 10; t = t.getCause(), depth++) {
+            if (type.isInstance(t)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

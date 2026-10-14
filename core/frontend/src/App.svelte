@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { auth } from './lib/auth.svelte';
+  import { startHeartbeat } from './lib/heartbeat';
   import { modules } from './lib/modules.svelte';
   import { overview } from './lib/overview.svelte';
   import { widgets } from './lib/widgets.svelte';
@@ -22,6 +23,13 @@
         overview.reset();
       }
     });
+  });
+
+  const loggedIn = $derived(!!auth.user);
+
+  $effect(() => {
+    if (!loggedIn) return;
+    return startHeartbeat();
   });
 </script>
 

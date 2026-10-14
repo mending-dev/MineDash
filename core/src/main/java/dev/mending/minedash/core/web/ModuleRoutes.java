@@ -33,6 +33,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
@@ -45,6 +47,9 @@ public final class ModuleRoutes {
     private static final String ASSET_PREFIX = "/api/assets/";
     private static final String MODULE_PREFIX = "/api/modules/";
     private static final String MANAGE_PERMISSION = "modules.manage";
+
+    private static final int MAX_CONNECTIONS_PER_USER = 20;
+    private static final int SESSION_CHECK_SECONDS = 10;
 
     private static final class WidgetView {
         final String id;
@@ -97,26 +102,36 @@ public final class ModuleRoutes {
         final LoadedModule module;
         final WebSocketHandler handler;
         final WsConnection connection;
+        /** Session token the connection was opened with, checked regularly. */
+        final String token;
+        final String username;
 
-        Binding(LoadedModule module, WebSocketHandler handler, WsConnection connection) {
+        Binding(LoadedModule module, WebSocketHandler handler, WsConnection connection,
+                String token, String username) {
             this.module = module;
             this.handler = handler;
             this.connection = connection;
+            this.token = token;
+            this.username = username;
         }
     }
 
     private final ModuleManager manager;
     private final UserStore users;
     private final SessionManager sessions;
+    private final WebSecurity security;
     private final Plugin plugin;
     private final Logger logger;
     private final Map<String, Binding> connections = new ConcurrentHashMap<>();
 
+    private ScheduledExecutorService sweeper;
+
     public ModuleRoutes(ModuleManager manager, UserStore users, SessionManager sessions,
-                        Plugin plugin, Logger logger) {
+                        WebSecurity security, Plugin plugin, Logger logger) {
         this.manager = manager;
         this.users = users;
         this.sessions = sessions;
+        this.security = security;
         this.plugin = plugin;
         this.logger = logger;
     }
@@ -137,6 +152,22 @@ public final class ModuleRoutes {
             ws.onMessage(this::wsMessage);
             ws.onClose(this::wsClose);
         });
+
+        // Open WebSockets must not outlive the session they were opened with
+        sweeper = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "MineDash-WsSessions");
+            thread.setDaemon(true);
+            return thread;
+        });
+        sweeper.scheduleWithFixedDelay(this::closeExpiredConnections,
+                SESSION_CHECK_SECONDS, SESSION_CHECK_SECONDS, TimeUnit.SECONDS);
+    }
+
+    public void shutdown() {
+        if (sweeper != null) {
+            sweeper.shutdownNow();
+            sweeper = null;
+        }
     }
 
     // ---------------------------------------------------------------- management
@@ -274,16 +305,21 @@ public final class ModuleRoutes {
     // ---------------------------------------------------------------- websocket
 
     private void wsConnect(WsConnectContext ctx) {
-        // The HTTP auth guard does not cover WebSocket upgrades, so everything is checked here
-        if (!originAllowed(ctx.header("Origin"), ctx.header("Host"))) {
+        // The HTTP guard does not cover WebSocket upgrades, so everything is checked here
+        if (!security.originAllowed(ctx.header("Origin"), ctx.header("Host"), ctx.header("X-Forwarded-Host"))) {
             ctx.closeSession(4403, "Forbidden origin");
             return;
         }
 
-        SessionManager.Session session = sessions.get(ctx.cookie(AuthRoutes.COOKIE_NAME));
+        String token = ctx.cookie(AuthRoutes.COOKIE_NAME);
+        SessionManager.Session session = sessions.get(token);
         User user = session == null ? null : users.get(session.getUsername());
         if (user == null) {
             ctx.closeSession(4401, "Not logged in");
+            return;
+        }
+        if (countConnections(user.getUsername()) >= MAX_CONNECTIONS_PER_USER) {
+            ctx.closeSession(4429, "Too many connections");
             return;
         }
 
@@ -302,7 +338,8 @@ public final class ModuleRoutes {
         }
 
         WsConnection connection = new WsConnection(ctx, user);
-        connections.put(ctx.getSessionId(), new Binding(module, channel.handler, connection));
+        connections.put(ctx.getSessionId(),
+                new Binding(module, channel.handler, connection, token, user.getUsername()));
         module.addConnection(connection);
         try {
             channel.handler.onConnect(connection);
@@ -343,13 +380,27 @@ public final class ModuleRoutes {
         }
     }
 
-    /** Browsers always send Origin on WebSocket upgrades. It must match the Host header. */
-    private static boolean originAllowed(String origin, String host) {
-        if (origin == null) {
-            return true;
+    private int countConnections(String username) {
+        int count = 0;
+        for (Binding binding : connections.values()) {
+            if (binding.username.equals(username)) {
+                count++;
+            }
         }
-        int scheme = origin.indexOf("://");
-        String originHost = scheme < 0 ? origin : origin.substring(scheme + 3);
-        return host != null && originHost.equalsIgnoreCase(host);
+        return count;
+    }
+
+    /** Closes connections whose session ended. Uses peek() so the check never extends a session. */
+    private void closeExpiredConnections() {
+        try {
+            for (Binding binding : connections.values()) {
+                if (sessions.peek(binding.token) == null) {
+                    binding.connection.closeWith(4401, "Session expired");
+                }
+            }
+        } catch (RuntimeException e) {
+            // A scheduled task that throws is never run again, so everything is caught here
+            logger.log(Level.WARNING, "WebSocket session check failed", e);
+        }
     }
 }
