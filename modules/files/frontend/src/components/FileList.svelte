@@ -19,6 +19,15 @@
   const visible = $derived(explorer.sorted.slice(0, limit));
   const hidden = $derived(explorer.sorted.length - visible.length);
 
+  /** Gives the keyboard focus to the first selected row, or else to the row at the cursor. */
+  export function focus(): void {
+    if (visible.length === 0) return;
+    const selected = visible.findIndex((entry) => explorer.isSelected(entry.name));
+    const index = selected >= 0 ? selected : Math.min(cursor, visible.length - 1);
+    cursor = index;
+    rows[index]?.focus();
+  }
+
   // A new folder starts at the top again
   $effect(() => {
     void explorer.path;
@@ -72,6 +81,10 @@
     rows[next]?.focus();
   }
 
+  /**
+   * Keys that only make sense on a row. Delete, F2, Backspace, select all and Escape are handled
+   * by the explorer itself, so they also work when a toolbar button has the focus.
+   */
   function onKeydown(event: KeyboardEvent, entry: Entry, index: number) {
     switch (event.key) {
       case 'ArrowDown':
@@ -97,20 +110,6 @@
       case ' ':
         event.preventDefault();
         explorer.toggle(entry.name);
-        break;
-      case 'Backspace':
-        event.preventDefault();
-        explorer.up();
-        break;
-      case 'Escape':
-        explorer.clearSelection();
-        break;
-      case 'a':
-      case 'A':
-        if (event.ctrlKey || event.metaKey) {
-          event.preventDefault();
-          explorer.selectAll();
-        }
         break;
     }
   }
