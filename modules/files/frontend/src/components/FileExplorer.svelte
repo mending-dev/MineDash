@@ -2,14 +2,19 @@
   import { onMount, tick, untrack } from 'svelte';
   import { Actions } from '../lib/actions.svelte';
   import { collectFiles } from '../lib/dropped';
+  import { Editing } from '../lib/editor.svelte';
   import { Explorer } from '../lib/explorer.svelte';
-  import { formatCount } from '../lib/format';
+  import { formatBytes, formatCount } from '../lib/format';
+  import { join } from '../lib/paths';
+  import type { Entry } from '../lib/types';
   import { Uploader } from '../lib/uploader.svelte';
   import { baseSelection, validateName } from '../lib/validate';
   import type { ModuleContext } from '../minedash';
   import ConfirmDialog from './ConfirmDialog.svelte';
+  import FileEditor from './FileEditor.svelte';
   import FileList from './FileList.svelte';
   import MoveDialog from './MoveDialog.svelte';
+  import NoticeBar from './NoticeBar.svelte';
   import PromptDialog from './PromptDialog.svelte';
   import ReportDialog from './ReportDialog.svelte';
   import Toolbar from './Toolbar.svelte';
@@ -22,6 +27,7 @@
   const explorer = new Explorer(ctx);
   const actions = new Actions(explorer);
   const uploader = new Uploader(explorer);
+  const editing = new Editing(explorer);
 
   let root = $state<HTMLDivElement>();
   let list = $state<ReturnType<typeof FileList>>();
@@ -35,11 +41,13 @@
   onMount(() => {
     const stopExplorer = explorer.start();
     const stopUploader = uploader.start();
+    const stopEditing = editing.start();
     window.addEventListener('dragover', onWindowDrag);
     window.addEventListener('drop', onWindowDrag);
     return () => {
       stopExplorer();
       stopUploader();
+      stopEditing();
       window.removeEventListener('dragover', onWindowDrag);
       window.removeEventListener('drop', onWindowDrag);
     };
@@ -52,6 +60,7 @@
     if (request === 0) return;
     untrack(() => {
       void tick().then(() => {
+        if (editing.active) return;
         const active = document.activeElement;
         if (active && active !== document.body && root && !root.contains(active)) return;
         if (list) list.focus();
@@ -60,11 +69,39 @@
     });
   });
 
+  // When the editor closes, the list is back and takes the focus
+  let wasEditing = false;
+  $effect(() => {
+    const now = editing.active;
+    untrack(() => {
+      if (wasEditing && !now) {
+        void tick().then(() => list?.focus());
+      }
+      wasEditing = now;
+    });
+  });
+
+  // ---------------------------------------------------------------- opening files
+
+  function openFile(entry: Entry): void {
+    if (editing.tooLarge(entry.size)) {
+      explorer.notify(
+        'error',
+        `"${entry.name}" is too large to edit (the limit is ${formatBytes(editing.maxBytes, 0)}). ` +
+          'Select it and use Download instead.'
+      );
+      return;
+    }
+    editing.open(join(explorer.path, entry.name));
+  }
+
   // ---------------------------------------------------------------- upload
 
   /** Only one dialog at a time, and only with the permission and a shown folder. */
   function acceptsFiles(): boolean {
-    return explorer.canWrite && explorer.loaded && !actions.dialog && !uploader.pending;
+    return (
+      explorer.canWrite && explorer.loaded && !editing.active && !actions.dialog && !uploader.pending
+    );
   }
 
   function addFiles(files: File[], folders = 0): void {
@@ -144,13 +181,14 @@
   }
 
   /**
-   * Keyboard shortcuts of the whole explorer. They work whenever the focus is anywhere inside it
-   * (a row, a toolbar button, the empty area), but never while typing or while a dialog is open.
+   * Keyboard shortcuts of the file list. They work whenever the focus is anywhere inside the explorer
+   * (a row, a toolbar button, the empty area), but never while typing, while a dialog is open or
+   * while a file is edited.
    * On a Mac the key labelled "delete" sends Backspace, so Backspace deletes when something is selected.
    */
   function onKeydown(event: KeyboardEvent) {
     if (event.defaultPrevented || event.isComposing || event.repeat) return;
-    if (actions.dialog || uploader.pending || isEditable(event.target)) return;
+    if (editing.active || actions.dialog || uploader.pending || isEditable(event.target)) return;
 
     const modifier = event.metaKey || event.ctrlKey;
     const hasSelection = explorer.selection.size > 0;
@@ -218,38 +256,36 @@
     ondragleave={onDragLeave}
     ondrop={onDrop}
   >
-    <Toolbar {explorer} {actions} onupload={openPicker} />
+    {#if editing.active}
+      <FileEditor {editing} {explorer} />
+    {:else}
+      <Toolbar {explorer} {actions} onupload={openPicker} />
+      <NoticeBar {explorer} />
 
-    {#if explorer.notice}
-      <div class="banner {explorer.notice.kind}" role={explorer.notice.kind === 'error' ? 'alert' : 'status'}>
-        <p>{explorer.notice.text}</p>
-        <button type="button" class="mdf-btn ghost" onclick={() => explorer.dismissNotice()}>Dismiss</button>
+      <div class="content">
+        {#if !explorer.loaded}
+          {#if explorer.loadError}
+            <div class="state" role="alert">
+              <p>{explorer.loadError}</p>
+              <div class="buttons">
+                <button type="button" class="mdf-btn primary" onclick={() => explorer.reload()}>Try again</button>
+                <button type="button" class="mdf-btn" onclick={() => void explorer.open('', 'replace')}>
+                  Go to the server folder
+                </button>
+              </div>
+            </div>
+          {:else}
+            <div class="state">Loading…</div>
+          {/if}
+        {:else}
+          <FileList bind:this={list} {explorer} onopenfile={openFile} />
+        {/if}
       </div>
     {/if}
 
-    <div class="content">
-      {#if !explorer.loaded}
-        {#if explorer.loadError}
-          <div class="state" role="alert">
-            <p>{explorer.loadError}</p>
-            <div class="buttons">
-              <button type="button" class="mdf-btn primary" onclick={() => explorer.reload()}>Try again</button>
-              <button type="button" class="mdf-btn" onclick={() => void explorer.open('', 'replace')}>
-                Go to the server folder
-              </button>
-            </div>
-          </div>
-        {:else}
-          <div class="state">Loading…</div>
-        {/if}
-      {:else}
-        <FileList bind:this={list} {explorer} />
-      {/if}
-    </div>
-
     <UploadPanel {uploader} />
 
-    {#if explorer.loaded}
+    {#if !editing.active && explorer.loaded}
       <div class="status">
         {formatCount(explorer.folderCount, 'folder')} · {formatCount(explorer.fileCount, 'file')}
       </div>
@@ -418,29 +454,6 @@
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.5rem;
-  }
-
-  .banner {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--md-border);
-    font-size: 0.8125rem;
-  }
-  .banner p {
-    flex: 1;
-    min-width: 0;
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
-  .banner.error {
-    color: var(--md-danger);
-    background: color-mix(in srgb, var(--md-danger) 10%, transparent);
-  }
-  .banner.info {
-    color: var(--md-info);
-    background: color-mix(in srgb, var(--md-info) 10%, transparent);
   }
 
   .status {

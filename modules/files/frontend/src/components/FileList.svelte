@@ -6,7 +6,7 @@
   import Checkbox from './Checkbox.svelte';
   import FileIcon from './FileIcon.svelte';
 
-  let { explorer }: { explorer: Explorer } = $props();
+  let { explorer, onopenfile }: { explorer: Explorer; onopenfile: (entry: Entry) => void } = $props();
 
   /** Rows rendered at once. Huge folders get a button instead of thousands of rows. */
   const PAGE_SIZE = 500;
@@ -50,9 +50,10 @@
     return explorer.sortDirection === 'asc' ? 'ascending' : 'descending';
   }
 
+  /** Folders are entered, files are opened in the editor. */
   function open(entry: Entry) {
     if (entry.directory) explorer.enter(entry.name);
-    // Files open in the editor in a later step
+    else onopenfile(entry);
   }
 
   function onRowClick(event: MouseEvent, entry: Entry, index: number) {
@@ -175,22 +176,18 @@
               <span class="cell">
                 <FileIcon directory={entry.directory} link={entry.link} />
                 <span class="text">
-                  {#if entry.directory}
-                    <button
-                      type="button"
-                      class="open"
-                      title={entry.name}
-                      tabindex="-1"
-                      onclick={(event) => {
-                        event.stopPropagation();
-                        explorer.enter(entry.name);
-                      }}
-                    >
-                      {entry.name}
-                    </button>
-                  {:else}
-                    <span class="filename" title={entry.name}>{entry.name}</span>
-                  {/if}
+                  <button
+                    type="button"
+                    class="open"
+                    title={entry.name}
+                    tabindex="-1"
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      open(entry);
+                    }}
+                  >
+                    {entry.name}
+                  </button>
                   <span class="meta">
                     {entry.directory ? '' : `${formatBytes(entry.size)} · `}{formatModified(entry.modified)}
                   </span>
@@ -317,22 +314,19 @@
     min-width: 0;
     flex: 1;
   }
-  .filename,
   .open {
     display: block;
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .open {
     padding: 0;
+    overflow: hidden;
     border: none;
     background: transparent;
     color: var(--md-text);
     font: inherit;
     font-weight: 500;
     text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     cursor: pointer;
   }
   .open:hover {
