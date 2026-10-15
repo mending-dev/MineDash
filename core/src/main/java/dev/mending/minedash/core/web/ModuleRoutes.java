@@ -3,6 +3,7 @@ package dev.mending.minedash.core.web;
 import dev.mending.minedash.api.ApiException;
 import dev.mending.minedash.api.HttpMethod;
 import dev.mending.minedash.api.ModuleInfo;
+import dev.mending.minedash.api.StreamResponse;
 import dev.mending.minedash.api.WebSocketHandler;
 import dev.mending.minedash.api.WidgetInfo;
 import dev.mending.minedash.core.auth.SessionManager;
@@ -17,6 +18,7 @@ import io.javalin.Javalin;
 import io.javalin.http.ConflictResponse;
 import io.javalin.http.Context;
 import io.javalin.http.ForbiddenResponse;
+import io.javalin.http.HttpResponseException;
 import io.javalin.http.InternalServerErrorResponse;
 import io.javalin.http.NotFoundResponse;
 import io.javalin.websocket.WsCloseContext;
@@ -291,11 +293,16 @@ public final class ModuleRoutes {
             Object result = route.handler.handle(new ApiRequestImpl(ctx, user, path));
             if (result == null) {
                 ctx.status(204);
+            } else if (result instanceof StreamResponse) {
+                StreamResponses.write(ctx, (StreamResponse) result);
             } else {
                 Json.respond(ctx, result);
             }
         } catch (ApiException e) {
             ctx.status(e.getStatus()).result(e.getMessage() == null ? "" : e.getMessage());
+        } catch (HttpResponseException e) {
+            // Raised by Javalin itself, e.g. 413 for a JSON body over 1 MB. It already carries the right status.
+            throw e;
         } catch (Exception e) {
             logger.log(Level.WARNING, "Module '" + id + "' failed on " + method + " " + path, e);
             throw new InternalServerErrorResponse();

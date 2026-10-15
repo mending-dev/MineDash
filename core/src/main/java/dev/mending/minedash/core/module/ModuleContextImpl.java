@@ -8,9 +8,13 @@ import dev.mending.minedash.api.ModuleContext;
 import dev.mending.minedash.api.ModuleInfo;
 import dev.mending.minedash.api.RouteHandler;
 import dev.mending.minedash.api.WebSocketHandler;
+import dev.mending.minedash.core.util.JsonFiles;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
+import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -135,6 +139,24 @@ public final class ModuleContextImpl implements ModuleContext {
         } catch (JsonParseException e) {
             throw new IllegalArgumentException("Invalid JSON", e);
         }
+    }
+
+    @Override
+    public <T> T loadConfig(Class<T> type) throws IOException {
+        Path file = dataFolder.resolve("config.json");
+        T config = Files.exists(file) ? JsonFiles.read(file, type) : null;
+        if (config == null) {
+            try {
+                Constructor<T> constructor = type.getDeclaredConstructor();
+                constructor.setAccessible(true);
+                config = constructor.newInstance();
+            } catch (ReflectiveOperationException e) {
+                throw new IOException("Config class " + type.getName() + " needs a no-argument constructor", e);
+            }
+        }
+        // Write back so new options show up in existing files
+        JsonFiles.write(file, config);
+        return config;
     }
 
     public Route findRoute(HttpMethod method, String path) {

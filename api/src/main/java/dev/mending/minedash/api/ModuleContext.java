@@ -2,6 +2,7 @@ package dev.mending.minedash.api;
 
 import org.bukkit.plugin.Plugin;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.logging.Logger;
 
@@ -60,4 +61,12 @@ public interface ModuleContext {
 
     /** Parses JSON. Throws IllegalArgumentException if the JSON is invalid. */
     <T> T fromJson(String json, Class<T> type);
+
+    /**
+     * Loads config.json from the data folder into an instance of the given class.
+     * The file is created with the default values if it is missing, and new options are added
+     * to existing files. The class needs a no-argument constructor (any visibility).
+     * Throws IOException if the file contains invalid JSON.
+     */
+    <T> T loadConfig(Class<T> type) throws IOException;
 }

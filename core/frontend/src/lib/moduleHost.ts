@@ -1,6 +1,6 @@
 import { api, notifyUnauthorized } from './api';
 import { auth } from './auth.svelte';
-import type { ModuleBundle, ModuleContext, ModuleSocket, SocketHandlers } from './types';
+import type { ModuleBundle, ModuleContext, ModuleSocket, SocketHandlers, UploadOptions } from './types';
 
 const PING_INTERVAL_MS = 20_000;
 const MAX_RETRY_DELAY_MS = 10_000;
@@ -107,7 +107,7 @@ function openSocket(moduleId: string, channel: string, handlers: SocketHandlers)
 // ---------------------------------------------------------------------------
 
 export interface HostedContext extends ModuleContext {
-    /** Closes everything the module opened. Called by the panel when the module is unmounted. */
+    /** Cancels uploads and closes sockets the module opened. Called by the panel when the module is unmounted. */
     dispose(): void;
 }
 
@@ -122,6 +122,26 @@ export function createModuleContext(moduleId: string): HostedContext {
         return base + path;
     };
     const sockets = new Set<ModuleSocket>();
+    const uploads = new Set<AbortController>();
+
+    const upload = <T = unknown>(path: string, body: Blob | string, options: UploadOptions = {}): Promise<T> => {
+        const target = url(path);
+
+        // One controller per upload, so dispose() can cancel it no matter what the module passed in
+        const controller = new AbortController();
+        const outer = options.signal;
+        const forward = () => controller.abort();
+        if (outer) {
+            if (outer.aborted) controller.abort();
+            else outer.addEventListener('abort', forward, { once: true });
+        }
+        uploads.add(controller);
+
+        return api.upload<T>(target, body, { ...options, signal: controller.signal }).finally(() => {
+            uploads.delete(controller);
+            outer?.removeEventListener('abort', forward);
+        });
+    };
 
     return {
         moduleId,
@@ -131,8 +151,10 @@ export function createModuleContext(moduleId: string): HostedContext {
             get: <T = unknown>(path: string) => api.get<T>(url(path)),
             post: <T = unknown>(path: string, body?: unknown) => api.post<T>(url(path), body),
             put: <T = unknown>(path: string, body?: unknown) => api.put<T>(url(path), body),
-            delete: <T = unknown>(path: string) => api.delete<T>(url(path))
+            delete: <T = unknown>(path: string) => api.delete<T>(url(path)),
+            upload
         },
+        url,
         connect(channel, handlers) {
             const socket = openSocket(moduleId, channel, handlers);
             sockets.add(socket);
@@ -145,6 +167,8 @@ export function createModuleContext(moduleId: string): HostedContext {
             };
         },
         dispose() {
+            for (const controller of uploads) controller.abort();
+            uploads.clear();
             for (const socket of sockets) socket.close();
             sockets.clear();
         }

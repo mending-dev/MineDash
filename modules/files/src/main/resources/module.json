@@ -1,0 +1,11 @@
+{
+  "id": "files",
+  "name": "Files",
+  "version": "${version}",
+  "description": "Browse and edit the files of your server",
+  "authors": ["Mending"],
+  "main": "dev.mending.minedash.modules.files.FilesModule",
+  "apiVersion": 1,
+  "frontend": "files.js",
+  "dependencies": []
+}
