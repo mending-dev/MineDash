@@ -148,6 +148,21 @@ export class Editing {
     /** What happened to the last draft write. "none" until the first one. */
     draftStatus = $state<DraftResult | 'none'>('none');
 
+    /** Paths of the files that have a draft. The file list marks them. */
+    draftPaths = $state.raw<ReadonlySet<string>>(new Set());
+    /** Folders that hold a file with a draft, parent folders included. The file list marks them too. */
+    draftFolders = $derived.by(() => {
+        const folders = new Set<string>();
+        for (const path of this.draftPaths) {
+            for (let folder = parent(path); folder !== ''; folder = parent(folder)) {
+                // When a folder is known already, so are its parents
+                if (folders.has(folder)) break;
+                folders.add(folder);
+            }
+        }
+        return folders;
+    });
+
     active = $derived(this.path !== null);
     name = $derived(this.path === null ? '' : this.path.slice(this.path.lastIndexOf('/') + 1));
     folder = $derived(this.path === null ? '' : parent(this.path));
@@ -179,6 +194,7 @@ export class Editing {
         window.addEventListener('pagehide', this.onPageHide);
         document.addEventListener('visibilitychange', this.onVisibilityChange);
         void this.loadLimit();
+        this.refreshDrafts();
 
         const state: unknown = history.state;
         const edit = (state as { mdEdit?: unknown } | null)?.mdEdit;
@@ -288,6 +304,7 @@ export class Editing {
         const current = snapshot ?? this.controller?.snapshot();
         if (!current) return;
         this.draftStatus = this.drafts.write(this.path, current.text, this.version);
+        this.refreshDrafts();
     }
 
     /** Throws the restored draft away and shows the file as it is on disk. */
@@ -298,6 +315,30 @@ export class Editing {
 
     dismissDraftNotice(): void {
         this.draftNotice = null;
+    }
+
+    /**
+     * Reads which files have a draft again, for the marks in the file list. Called after every change
+     * of the draft storage. Users who cannot write have no drafts, so nothing is marked for them.
+     */
+    refreshDrafts(): void {
+        const next = this.readOnly ? [] : this.drafts.paths();
+        const current = this.draftPaths;
+        // The same files again: no new set, so nothing in the list has to be updated
+        if (next.length === current.size && next.every((path) => current.has(path))) return;
+        this.draftPaths = new Set(next);
+    }
+
+    /** Files or folders were deleted in the panel. The drafts of everything inside are of no use any more. */
+    forgetDrafts(paths: string[]): void {
+        for (const path of paths) this.drafts.removeTree(path);
+        this.refreshDrafts();
+    }
+
+    /** Files or folders were renamed or moved in the panel. Their drafts follow them. */
+    moveDrafts(moves: Array<{ from: string; to: string }>): void {
+        for (const move of moves) this.drafts.moveTree(move.from, move.to);
+        this.refreshDrafts();
     }
 
     // ---------------------------------------------------------------- conflicts
@@ -405,6 +446,7 @@ export class Editing {
             } else {
                 // The editor was closed while the request was running. Its draft now builds on the saved text.
                 this.drafts.settle(path, snapshot.text, result.version);
+                this.refreshDrafts();
             }
             return true;
         } catch (error) {
@@ -520,7 +562,7 @@ export class Editing {
         if (draft === null) return;
         if (draft.text === file.content) {
             // Nothing to restore, the file already contains this text
-            this.drafts.remove(path);
+            this.removeDraft(path);
             return;
         }
 
@@ -548,7 +590,13 @@ export class Editing {
         window.clearTimeout(this.draftTimer);
         this.draftFirstChange = 0;
         this.draftStatus = 'none';
-        if (this.path !== null && !this.readOnly) this.drafts.remove(this.path);
+        if (this.path !== null && !this.readOnly) this.removeDraft(this.path);
+    }
+
+    /** Removes the draft of a file and updates the marks in the file list. */
+    private removeDraft(path: string): void {
+        this.drafts.remove(path);
+        this.refreshDrafts();
     }
 
     private handleSaveError(error: unknown): void {

@@ -6,7 +6,16 @@
   import Checkbox from './Checkbox.svelte';
   import FileIcon from './FileIcon.svelte';
 
-  let { explorer, onopenfile }: { explorer: Explorer; onopenfile: (entry: Entry) => void } = $props();
+  let {
+    explorer,
+    onopenfile,
+    draftMark
+  }: {
+    explorer: Explorer;
+    onopenfile: (entry: Entry) => void;
+    /** "draft" for a file with a saved draft, "inside" for a folder that contains one, otherwise null. */
+    draftMark: (entry: Entry) => 'draft' | 'inside' | null;
+  } = $props();
 
   /** Rows rendered at once. Huge folders get a button instead of thousands of rows. */
   const PAGE_SIZE = 500;
@@ -153,6 +162,7 @@
       </thead>
       <tbody>
         {#each visible as entry, index (entry.name)}
+          {@const mark = draftMark(entry)}
           <tr
             bind:this={rows[index]}
             role="row"
@@ -176,18 +186,43 @@
               <span class="cell">
                 <FileIcon directory={entry.directory} link={entry.link} />
                 <span class="text">
-                  <button
-                    type="button"
-                    class="open"
-                    title={entry.name}
-                    tabindex="-1"
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      open(entry);
-                    }}
-                  >
-                    {entry.name}
-                  </button>
+                  <span class="line">
+                    <button
+                      type="button"
+                      class="open"
+                      title={entry.name}
+                      tabindex="-1"
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        open(entry);
+                      }}
+                    >
+                      {entry.name}
+                    </button>
+                    {#if mark === 'draft'}
+                      <span
+                        class="badge"
+                        role="img"
+                        aria-label="Has unsaved changes kept as a draft"
+                        title="Unsaved changes are kept as a draft. Open the file to continue."
+                      >
+                        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                          <path d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4" />
+                        </svg>
+                      </span>
+                    {:else if mark === 'inside'}
+                      <span
+                        class="badge"
+                        role="img"
+                        aria-label="Contains files with unsaved drafts"
+                        title="Contains files with unsaved drafts"
+                      >
+                        <svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
+                          <circle cx="12" cy="12" r="7" />
+                        </svg>
+                      </span>
+                    {/if}
+                  </span>
                   <span class="meta">
                     {entry.directory ? '' : `${formatBytes(entry.size)} · `}{formatModified(entry.modified)}
                   </span>
@@ -314,8 +349,17 @@
     min-width: 0;
     flex: 1;
   }
+
+  /* The name and the draft mark share a line. Long names shrink, the mark always stays visible. */
+  .line {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-width: 0;
+  }
   .open {
-    display: block;
+    flex: 0 1 auto;
+    min-width: 0;
     max-width: 100%;
     padding: 0;
     overflow: hidden;
@@ -332,6 +376,23 @@
   .open:hover {
     color: var(--md-accent);
     text-decoration: underline;
+  }
+
+  .badge {
+    display: inline-flex;
+    flex: none;
+    color: var(--md-warning);
+  }
+  .badge svg {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .badge circle {
+    fill: currentColor;
+    stroke: none;
   }
 
   /* Size and date move below the name on narrow screens */

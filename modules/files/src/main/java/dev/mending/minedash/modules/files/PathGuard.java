@@ -22,7 +22,8 @@ import java.util.logging.Logger;
  * Everything that touches the file system must get its paths from here.
  *
  * Rules: no ".." and no backslashes, the real path (after following links) must stay inside
- * the root, and paths on the deny list are never accessible.
+ * the root, and protected paths are never accessible. Protected are the entries of the deny list
+ * and the files that MineDash itself needs to keep secret, whatever the config says.
  */
 final class PathGuard {
 
@@ -39,7 +40,7 @@ final class PathGuard {
     private static final class DenyEntry {
         /** Absolute path of the entry. It does not have to exist. */
         final Path path;
-        /** Lower case names relative to the root. */
+        /** Lower case names relative to the root, or null if the entry lies outside of the root. */
         final List<String> names;
 
         DenyEntry(Path path, List<String> names) {
@@ -52,7 +53,11 @@ final class PathGuard {
     private final Path root;
     private final List<DenyEntry> deny;
 
-    PathGuard(Path root, List<String> denyPaths, Logger logger) throws IOException {
+    /**
+     * @param denyPaths      entries of the config, relative to the root
+     * @param protectedPaths absolute paths that are protected no matter what the config says
+     */
+    PathGuard(Path root, List<String> denyPaths, List<Path> protectedPaths, Logger logger) throws IOException {
         this.root = root.toRealPath();
 
         List<DenyEntry> entries = new ArrayList<>();
@@ -75,6 +80,13 @@ final class PathGuard {
                 entries.add(new DenyEntry(path, lower));
             } catch (ApiException | InvalidPathException e) {
                 logger.warning("Ignoring invalid denyPaths entry '" + raw + "': " + e.getMessage());
+            }
+        }
+
+        for (Path protectedPath : protectedPaths) {
+            DenyEntry entry = fromAbsolute(protectedPath);
+            if (entry != null) {
+                entries.add(entry);
             }
         }
         this.deny = Collections.unmodifiableList(entries);
@@ -156,7 +168,7 @@ final class PathGuard {
         }
         List<String> names = relativeNames(absolute, true);
         for (DenyEntry entry : deny) {
-            if (startsWith(names, entry.names)) {
+            if (entry.names != null && startsWith(names, entry.names)) {
                 return true;
             }
         }
@@ -165,7 +177,8 @@ final class PathGuard {
 
     /**
      * Full check: by name, and by file identity for paths that exist. The identity check catches
-     * hard links and spelling variants on case-insensitive file systems.
+     * hard links and spelling variants on case-insensitive file systems, also for protected files
+     * that lie outside of the root.
      */
     boolean isDenied(Path absolute) {
         if (isHidden(absolute)) {
@@ -193,6 +206,10 @@ final class PathGuard {
      */
     boolean containsDenied(Path directory) {
         for (DenyEntry entry : deny) {
+            // A path outside of the root cannot be inside a folder below the root
+            if (entry.names == null) {
+                continue;
+            }
             if (entry.path.startsWith(directory)) {
                 return true;
             }
@@ -270,6 +287,27 @@ final class PathGuard {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /**
+     * An entry for a path that is protected no matter what the config says. Links are resolved the
+     * same way as for the root. Returns null if the path cannot be resolved.
+     */
+    private DenyEntry fromAbsolute(Path path) {
+        try {
+            Path candidate = real(path.toAbsolutePath().normalize());
+            if (!candidate.startsWith(root)) {
+                // Out of reach by name, but still compared by file identity (hard links)
+                return new DenyEntry(candidate, null);
+            }
+            List<String> names = new ArrayList<>();
+            for (Path part : root.relativize(candidate)) {
+                names.add(part.toString().toLowerCase(Locale.ROOT));
+            }
+            return names.isEmpty() ? null : new DenyEntry(candidate, names);
+        } catch (IOException | InvalidPathException e) {
+            return null;
+        }
+    }
 
     private List<String> relativeNames(Path absolute, boolean lowerCase) {
         List<String> names = new ArrayList<>();

@@ -9,6 +9,7 @@ import dev.mending.minedash.api.StreamResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Collections;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -76,7 +77,12 @@ public class FilesModule implements MineDashModule {
         final FilesConfig config = context.loadConfig(FilesConfig.class);
         config.validate(logger);
 
-        PathGuard guard = new PathGuard(resolveRoot(config.root), config.denyPaths, logger);
+        // The accounts file holds the password hashes. It stays protected even if "root" or
+        // "denyPaths" are changed in a way that would no longer cover it.
+        List<Path> protectedPaths = Collections.singletonList(
+                context.getPlugin().getDataFolder().toPath().resolve("users.json"));
+
+        PathGuard guard = new PathGuard(resolveRoot(config.root), config.denyPaths, protectedPaths, logger);
         final FileService service = new FileService(guard, config, logger);
         final FileOperations operations = new FileOperations(guard, service, config, logger);
         final ZipService zips = new ZipService(guard, service, config, logger);

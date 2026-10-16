@@ -25,9 +25,13 @@
 
   // The context does not change while the page is mounted
   const explorer = new Explorer(ctx);
-  const actions = new Actions(explorer);
-  const uploader = new Uploader(explorer);
   const editing = new Editing(explorer);
+  // Unsaved text of a file follows it when it is renamed or moved, and goes away when it is deleted
+  const actions = new Actions(explorer, {
+    deleted: (paths) => editing.forgetDrafts(paths),
+    moved: (moves) => editing.moveDrafts(moves)
+  });
+  const uploader = new Uploader(explorer);
 
   let root = $state<HTMLDivElement>();
   let list = $state<ReturnType<typeof FileList>>();
@@ -81,7 +85,7 @@
     });
   });
 
-  // ---------------------------------------------------------------- opening files
+  // ---------------------------------------------------------------- opening files and draft marks
 
   function openFile(entry: Entry): void {
     if (editing.tooLarge(entry.size)) {
@@ -93,6 +97,13 @@
       return;
     }
     editing.open(join(explorer.path, entry.name));
+  }
+
+  /** Which mark a row gets: a file with a draft, or a folder that contains files with drafts. */
+  function draftMark(entry: Entry): 'draft' | 'inside' | null {
+    const path = join(explorer.path, entry.name);
+    if (entry.directory) return editing.draftFolders.has(path) ? 'inside' : null;
+    return editing.draftPaths.has(path) ? 'draft' : null;
   }
 
   // ---------------------------------------------------------------- upload
@@ -278,7 +289,7 @@
             <div class="state">Loading…</div>
           {/if}
         {:else}
-          <FileList bind:this={list} {explorer} onopenfile={openFile} />
+          <FileList bind:this={list} {explorer} onopenfile={openFile} {draftMark} />
         {/if}
       </div>
     {/if}

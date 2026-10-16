@@ -68,6 +68,11 @@ function removeKey(store: Storage, key: string): void {
     }
 }
 
+/** True if "path" is the folder itself or lies below it. */
+function isSameOrBelow(path: string, folder: string): boolean {
+    return path === folder || path.startsWith(`${folder}/`);
+}
+
 /**
  * Drafts of the files of one user. They live in the session storage of the browser tab, so they
  * survive page changes and reloads but disappear with the tab. Config files can contain
@@ -143,23 +148,110 @@ export class Drafts {
         else this.write(path, draft.text, version);
     }
 
+    /**
+     * Paths of all drafts of this user. They are taken from the storage keys, so the (possibly big)
+     * texts are not read or parsed. Records that do not belong to a file are found out when they are opened.
+     */
+    paths(): string[] {
+        const store = storage();
+        if (!store) return [];
+
+        const found: string[] = [];
+        for (const key of this.keys(store)) {
+            const path = this.pathOf(key);
+            if (path !== null) found.push(path);
+        }
+        return found;
+    }
+
+    /** Removes the drafts of a file, or of everything below a folder. */
+    removeTree(path: string): void {
+        const store = storage();
+        if (!store) return;
+
+        for (const key of this.keys(store)) {
+            const draftPath = this.pathOf(key);
+            if (draftPath !== null && isSameOrBelow(draftPath, path)) removeKey(store, key);
+        }
+    }
+
+    /**
+     * Moves the drafts of a renamed or moved file, or of everything below a folder, to the new path.
+     * A draft that already exists at the new path is replaced, it can only be left over from a file
+     * that is gone.
+     */
+    moveTree(from: string, to: string): void {
+        if (from === to) return;
+        const store = storage();
+        if (!store) return;
+
+        // Collected first, because the storage changes while the drafts are moved
+        const affected: Array<{ key: string; path: string }> = [];
+        for (const key of this.keys(store)) {
+            const path = this.pathOf(key);
+            if (path !== null && isSameOrBelow(path, from)) affected.push({ key, path });
+        }
+
+        for (const { key, path } of affected) {
+            const draft = this.read(path);
+            if (draft === null) continue;
+
+            const target = to + path.slice(from.length);
+            const newKey = this.key(target);
+            if (newKey === key) continue;
+
+            const record = JSON.stringify({ v: 1, path: target, text: draft.text, base: draft.base, at: draft.at });
+            if (tryStore(store, newKey, record)) {
+                removeKey(store, key);
+            } else {
+                // The storage is full. The old record has the same size, so removing it makes room.
+                removeKey(store, key);
+                tryStore(store, newKey, record);
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private key(path: string): string {
         return this.prefix + encodeURIComponent(path);
     }
 
-    /** The other drafts of this user with the size of their stored record. */
-    private others(store: Storage, exclude: string): Stored[] {
-        const found: Stored[] = [];
+    /** Keys of all drafts of this user. */
+    private keys(store: Storage): string[] {
+        const found: string[] = [];
         try {
             for (let i = 0; i < store.length; i++) {
                 const key = store.key(i);
-                if (key === null || key === exclude || !key.startsWith(this.prefix)) continue;
-                found.push({ key, size: store.getItem(key)?.length ?? 0 });
+                if (key !== null && key.startsWith(this.prefix)) found.push(key);
             }
         } catch {
-            // The storage cannot be read, so there is nothing to evict
+            // The storage cannot be read, so there is nothing to find
+        }
+        return found;
+    }
+
+    /** The file path a key stands for, or null if the key is damaged. */
+    private pathOf(key: string): string | null {
+        try {
+            return decodeURIComponent(key.slice(this.prefix.length));
+        } catch {
+            return null;
+        }
+    }
+
+    /** The other drafts of this user with the size of their stored record. */
+    private others(store: Storage, exclude: string): Stored[] {
+        const found: Stored[] = [];
+        for (const key of this.keys(store)) {
+            if (key === exclude) continue;
+            let size = 0;
+            try {
+                size = store.getItem(key)?.length ?? 0;
+            } catch {
+                size = 0;
+            }
+            found.push({ key, size });
         }
         return found;
     }

@@ -36,6 +36,14 @@ interface Outcome {
     report?: Report;
 }
 
+/** Things other parts of the explorer have to react to when files change. */
+export interface ActionHooks {
+    /** Files or folders were deleted. Paths are relative to the managed root. */
+    deleted?(paths: string[]): void;
+    /** Files or folders were renamed or moved. */
+    moved?(moves: Array<{ from: string; to: string }>): void;
+}
+
 /**
  * The open dialog. Every dialog remembers the folder it was opened in, so an action still hits the
  * right folder when the browser's back button changes the shown folder in the meantime.
@@ -88,8 +96,11 @@ export class Actions {
         this.explorer.selectedEntries.length === 1 ? this.explorer.selectedEntries[0] : null
     );
 
-    constructor(explorer: Explorer) {
+    private readonly hooks: ActionHooks;
+
+    constructor(explorer: Explorer, hooks: ActionHooks = {}) {
         this.explorer = explorer;
+        this.hooks = hooks;
     }
 
     // ---------------------------------------------------------------- opening dialogs
@@ -189,7 +200,9 @@ export class Actions {
         if (problem) return problem;
 
         return this.perform(state.folder, async () => {
-            await this.explorer.ctx.http.post('/rename', { path: join(state.folder, state.entry.name), name });
+            const from = join(state.folder, state.entry.name);
+            await this.explorer.ctx.http.post('/rename', { path: from, name });
+            this.react(() => this.hooks.moved?.([{ from, to: join(state.folder, name) }]));
             return { select: name };
         });
     }
@@ -198,6 +211,7 @@ export class Actions {
         return this.perform(state.folder, async () => {
             const paths = state.names.map((name) => join(state.folder, name));
             const result = await this.explorer.ctx.http.post<BatchResult>('/delete', { paths });
+            this.react(() => this.hooks.deleted?.(result.done));
             return this.batchOutcome(result, 'delete');
         });
     }
@@ -209,6 +223,9 @@ export class Actions {
         return this.perform(state.folder, async () => {
             const paths = state.names.map((name) => join(state.folder, name));
             const result = await this.explorer.ctx.http.post<BatchResult>('/move', { paths, destination });
+            this.react(() =>
+                this.hooks.moved?.(result.done.map((from) => ({ from, to: join(destination, baseName(from)) })))
+            );
             const target = destination === '' ? 'the server folder' : `"${baseName(destination)}"`;
             return this.batchOutcome(result, 'move', ` to ${target}`);
         });
@@ -292,6 +309,15 @@ export class Actions {
         if (outcome.notice) this.explorer.notify('info', outcome.notice);
         void this.refresh(folder, outcome.select);
         return null;
+    }
+
+    /** Runs a hook. The action itself already worked, so a failing hook must never turn it into an error. */
+    private react(call: () => void): void {
+        try {
+            call();
+        } catch {
+            // Hooks only keep side data in sync, such as drafts
+        }
     }
 
     private async refresh(folder: string, select?: string): Promise<void> {
