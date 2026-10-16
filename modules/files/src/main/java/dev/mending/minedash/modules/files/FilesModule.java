@@ -90,11 +90,14 @@ public class FilesModule implements MineDashModule {
         context.get("/content", VIEW, request -> service.read(param(request, "path")));
 
         // The body is the new text. It is streamed, so it is not limited to 1 MB like JSON bodies.
+        // With version=<hash> the save fails if the file changed in the meantime.
+        // With force=true the version is ignored: an existing file is overwritten and a missing one is created.
         context.put("/content", WRITE, request -> {
             String path = param(request, "path");
+            boolean force = "true".equals(request.getQueryParam("force"));
             FileOperations.Version version = operations.write(
-                    path, request.getBodyStream(config.maxEditBytes), request.getQueryParam("version"));
-            audit(request, "saved " + path);
+                    path, request.getBodyStream(config.maxEditBytes), request.getQueryParam("version"), force);
+            audit(request, (force ? "saved (forced) " : "saved ") + path);
             return version;
         });
 

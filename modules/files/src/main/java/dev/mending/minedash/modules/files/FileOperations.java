@@ -72,31 +72,44 @@ final class FileOperations {
     }
 
     /**
-     * Saves text from the editor. Fails with 409 if the file changed since it was opened,
-     * which is detected by comparing the hash of the current content with expectedVersion.
+     * Saves text from the editor. Without force, it fails with 409 if the file changed since it was
+     * opened, which is detected by comparing the hash of the current content with expectedVersion.
      * Another process can still change the file between this check and the replacement.
+     *
+     * With force the version is not checked: an existing file is overwritten, and a missing file is
+     * created again (its folder has to exist). Folders are never overwritten.
      */
-    Version write(String path, InputStream body, String expectedVersion) {
-        if (expectedVersion == null || expectedVersion.isEmpty()) {
+    Version write(String path, InputStream body, String expectedVersion, boolean force) {
+        if (!force && (expectedVersion == null || expectedVersion.isEmpty())) {
             throw new ApiException(400, "Missing 'version' parameter");
         }
         Path logical = guard.resolve(path);
         // Follow links, so the link itself stays in place
         Path target = service.realOf(logical);
-        if (!Files.exists(target)) {
+
+        boolean exists = Files.exists(target);
+        if (exists && !Files.isRegularFile(target)) {
+            throw new ApiException(400, "Not a regular file");
+        }
+        if (!exists && !force) {
             throw new ApiException(409, "The file no longer exists");
         }
-        if (!Files.isRegularFile(target)) {
-            throw new ApiException(400, "Not a regular file");
+        if (!exists) {
+            Path parent = target.getParent();
+            if (parent == null || !Files.isDirectory(parent)) {
+                throw new ApiException(404, "The target folder does not exist");
+            }
         }
 
         try {
-            // The editor only opens files up to this size, so a bigger file has been replaced
-            if (Files.size(target) > config.maxEditBytes || !expectedVersion.equals(FileVersions.of(target))) {
-                throw new ApiException(409, "The file was changed by someone else. Reload it before saving.");
+            if (exists && !force) {
+                // The editor only opens files up to this size, so a bigger file has been replaced
+                if (Files.size(target) > config.maxEditBytes || !expectedVersion.equals(FileVersions.of(target))) {
+                    throw new ApiException(409, "The file was changed by someone else. Reload it before saving.");
+                }
             }
             MessageDigest digest = FileVersions.newDigest();
-            long size = store(target, body, digest, true);
+            long size = store(target, body, digest, exists);
             return new Version(FileVersions.hex(digest), size, Files.getLastModifiedTime(target).toMillis());
         } catch (IOException e) {
             throw FileErrors.from(e, logger);

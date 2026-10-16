@@ -42,7 +42,8 @@
     wrap = false,
     readOnly = false,
     onchange,
-    onposition
+    onposition,
+    onunmount
   }: {
     /** Content of the file. It is only read when the editor is created. */
     text: string;
@@ -53,9 +54,11 @@
     draft?: string | null;
     wrap?: boolean;
     readOnly?: boolean;
-    /** Called when the unsaved state changes. */
+    /** Called after every change of the text, with the unsaved state after that change. */
     onchange: (dirty: boolean) => void;
     onposition: (line: number, column: number) => void;
+    /** Called right before the editor is destroyed, and only if there is unsaved text. */
+    onunmount?: (snapshot: Snapshot) => void;
   } = $props();
 
   let host = $state<HTMLDivElement>();
@@ -278,6 +281,14 @@
     }
 
     return () => {
+      // Unsaved text is handed over before the editor disappears, e.g. when the user opens another page of the panel
+      if (savedDoc !== undefined && !editorView.state.doc.eq(savedDoc)) {
+        try {
+          onunmount?.(getSnapshot());
+        } catch {
+          // A failing hook must never keep the editor from being destroyed
+        }
+      }
       editorView.destroy();
       view = undefined;
     };

@@ -2,8 +2,9 @@
   import { onMount, type Component } from 'svelte';
   import type { Editing, Snapshot } from '../lib/editor.svelte';
   import type { Explorer } from '../lib/explorer.svelte';
-  import { formatBytes } from '../lib/format';
+  import { formatBytes, formatModified } from '../lib/format';
   import { languageLabel } from '../lib/languages';
+  import ConflictDialog from './ConflictDialog.svelte';
   import LeaveDialog from './LeaveDialog.svelte';
   import NoticeBar from './NoticeBar.svelte';
 
@@ -20,10 +21,12 @@
       text: string;
       separator: string;
       fileName: string;
+      draft?: string | null;
       wrap: boolean;
       readOnly: boolean;
       onchange: (dirty: boolean) => void;
       onposition: (line: number, column: number) => void;
+      onunmount?: (snapshot: Snapshot) => void;
     },
     CodeEditorApi
   >;
@@ -36,6 +39,9 @@
   let codeEditor = $state<CodeEditorApi>();
   let line = $state(1);
   let column = $state(1);
+
+  /** The conflict dialog is shown, unless the question about leaving the editor is in front of it. */
+  const conflictDialogOpen = $derived(editing.conflict !== null && editing.conflictOpen && editing.leave === null);
 
   onMount(() => {
     import('./CodeEditor.svelte')
@@ -68,6 +74,15 @@
     return '';
   });
 
+  /** Tells whether the unsaved text is protected by a draft. Nothing to say while it is not unsaved. */
+  const draftHint = $derived.by(() => {
+    if (!editing.dirty || editing.readOnly) return '';
+    if (editing.draftStatus === 'saved') return 'Draft kept';
+    if (editing.draftStatus === 'too-large') return 'Too large for an automatic draft';
+    if (editing.draftStatus === 'failed') return 'Draft could not be kept';
+    return '';
+  });
+
   /** Cmd/Ctrl+S saves, wherever the focus is. Without this the browser would offer to save the page. */
   function onKeydown(event: KeyboardEvent) {
     const wantsSave =
@@ -76,7 +91,8 @@
 
     event.preventDefault();
     event.stopPropagation();
-    if (editing.leave === null && !editing.readOnly) void editing.save();
+    // While a question or the conflict dialog is open, the answer decides
+    if (editing.leave === null && !conflictDialogOpen && !editing.readOnly) void editing.save();
   }
 </script>
 
@@ -151,21 +167,33 @@
       </div>
     {/if}
 
-    {#if editing.conflict === 'changed'}
-      <div class="banner error" role="alert">
-        <p>This file was changed by someone else after you opened it, so it was not saved.</p>
-        <button type="button" class="mdf-btn" onclick={() => editing.reloadFromDisk()}>
-          Reload from disk (discards your changes)
-        </button>
-      </div>
-    {:else if editing.conflict === 'deleted'}
-      <div class="banner error" role="alert">
-        <p>This file no longer exists, so it was not saved.</p>
-        <button type="button" class="mdf-btn" onclick={() => editing.discardAndClose()}>Close editor</button>
+    {#if editing.draftNotice}
+      <div class="banner info" role="status">
+        <p>
+          Restored your unsaved changes from {formatModified(editing.draftNotice.at)}.
+          {#if editing.draftNotice.stale}
+            The file was changed on disk after that, so saving will ask how to combine both versions.
+          {/if}
+        </p>
+        <button type="button" class="mdf-btn" onclick={() => editing.discardDraft()}>Discard draft</button>
+        <button type="button" class="mdf-btn ghost" onclick={() => editing.dismissDraftNotice()}>Dismiss</button>
       </div>
     {/if}
 
-    {#if editing.saveError}
+    {#if editing.conflict}
+      <div class="banner error" role="alert">
+        <p>
+          {#if editing.conflict === 'changed'}
+            This file was changed by someone else after you opened it, so your changes were not saved.
+          {:else}
+            This file no longer exists, so your changes were not saved.
+          {/if}
+        </p>
+        <button type="button" class="mdf-btn" onclick={() => editing.openConflict()}>Resolve…</button>
+      </div>
+    {/if}
+
+    {#if editing.saveError && !conflictDialogOpen}
       <div class="banner error" role="alert">
         <p>{editing.saveError}</p>
         <button type="button" class="mdf-btn ghost" onclick={() => editing.dismissSaveError()}>Dismiss</button>
@@ -196,6 +224,7 @@
           text={editing.text}
           separator={editing.separator}
           fileName={editing.name}
+          draft={editing.draftText}
           wrap={editing.wrap}
           readOnly={editing.readOnly}
           onchange={(dirty) => editing.onChange(dirty)}
@@ -203,6 +232,7 @@
             line = l;
             column = c;
           }}
+          onunmount={(snapshot) => editing.flushDraft(snapshot)}
         />
       {/key}
     {:else}
@@ -217,6 +247,9 @@
       <span>{editing.separator === '\r\n' ? 'CRLF' : 'LF'}</span>
       <span>{formatBytes(editing.size)}</span>
       <span class="spacer"></span>
+      {#if draftHint}
+        <span class="draft-hint" class:problem={editing.draftStatus !== 'saved'}>{draftHint}</span>
+      {/if}
       <span class="save-state" class:dirty={editing.dirty} role="status">{statusText}</span>
     </footer>
   {/if}
@@ -229,6 +262,16 @@
       onstay={() => editing.stay()}
       ondiscard={() => editing.discard()}
       onsave={() => void editing.saveAndLeave()}
+    />
+  {/if}
+
+  {#if conflictDialogOpen && editing.conflict}
+    <ConflictDialog
+      kind={editing.conflict}
+      name={editing.name}
+      busy={editing.saving}
+      error={editing.saveError}
+      onresolve={(action) => void editing.resolve(action)}
     />
   {/if}
 </div>
@@ -345,6 +388,9 @@
     font-size: 0.75rem;
   }
   .save-state.dirty {
+    color: var(--md-warning);
+  }
+  .draft-hint.problem {
     color: var(--md-warning);
   }
 
