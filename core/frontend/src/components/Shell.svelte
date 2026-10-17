@@ -2,10 +2,12 @@
   import { auth } from '../lib/auth.svelte';
   import { modules } from '../lib/modules.svelte';
   import { router } from '../lib/router.svelte';
+  import Avatar from './Avatar.svelte';
   import Logo from './Logo.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
   import Overview from './Overview.svelte';
   import ModulesPage from './ModulesPage.svelte';
+  import ModuleIcon from './ModuleIcon.svelte';
   import ModuleView from './ModuleView.svelte';
 
   let menuOpen = $state(false);
@@ -65,9 +67,7 @@
         <p class="px-3 pt-4 pb-1 text-xs font-medium tracking-wider text-muted uppercase">Modules</p>
         {#each modules.navigable as m (m.id)}
           <a href="#/m/{m.id}" class={linkClass(moduleId === m.id)} onclick={closeMenu}>
-            <span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent/15 text-xs font-semibold text-accent">
-              {m.name.charAt(0).toUpperCase()}
-            </span>
+            <ModuleIcon name={m.name} icon={m.icon} />
             <span class="truncate">{m.name}</span>
           </a>
         {/each}
@@ -80,6 +80,7 @@
     </nav>
 
     <div class="flex shrink-0 items-center gap-2 border-t border-line p-3">
+      <Avatar name={auth.user?.username ?? ''} template={auth.user?.avatarUrl} class="h-7 w-7 text-xs" />
       <span class="min-w-0 flex-1 truncate text-sm text-muted">{auth.user?.username}</span>
       <button type="button" class="md-btn md-btn-secondary px-2" onclick={() => auth.logout()} aria-label="Sign out" title="Sign out">
         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

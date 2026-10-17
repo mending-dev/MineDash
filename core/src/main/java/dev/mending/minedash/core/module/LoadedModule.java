@@ -15,6 +15,8 @@ public final class LoadedModule {
     private final ModuleInfo info;
     private final Path jar;
     private final ModuleClassLoader classLoader;
+    private final String icon;
+    private final String iconWarning;
     private final Set<WebSocketConnection> connections = ConcurrentHashMap.newKeySet();
 
     private volatile ModuleState state = ModuleState.DISABLED;
@@ -22,10 +24,12 @@ public final class LoadedModule {
     private volatile MineDashModule instance;
     private volatile ModuleContextImpl context;
 
-    LoadedModule(ModuleInfo info, Path jar, ModuleClassLoader classLoader) {
+    LoadedModule(ModuleInfo info, Path jar, ModuleClassLoader classLoader, String icon, String iconWarning) {
         this.info = info;
         this.jar = jar;
         this.classLoader = classLoader;
+        this.icon = icon;
+        this.iconWarning = iconWarning;
     }
 
     public ModuleInfo getInfo() {
@@ -34,6 +38,16 @@ public final class LoadedModule {
 
     public Path getJar() {
         return jar;
+    }
+
+    /** The icon as cleaned SVG markup that is safe to put into the page, or null if the module has none. */
+    public String getIcon() {
+        return icon;
+    }
+
+    /** Why the icon of the module was ignored, or null. */
+    public String getIconWarning() {
+        return iconWarning;
     }
 
     public ModuleState getState() {

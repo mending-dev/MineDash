@@ -2,6 +2,8 @@
 export interface User {
     username: string;
     permissions: string[];
+    /** Template for the player heads with {name} and {size}. Empty if heads are switched off. */
+    avatarUrl?: string;
 }
 
 export type WidgetSize = 'small' | 'medium' | 'large';
@@ -25,6 +27,8 @@ export interface ModuleEntry {
     widgets: WidgetEntry[];
     state: 'enabled' | 'disabled' | 'failed';
     error?: string;
+    /** Cleaned SVG markup of the icon. Missing if the module has no icon. */
+    icon?: string;
     /** URL of the frontend entry file, only present while the module is enabled. */
     frontend?: string;
 }

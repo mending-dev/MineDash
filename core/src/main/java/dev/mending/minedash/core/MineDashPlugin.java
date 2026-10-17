@@ -6,6 +6,7 @@ import dev.mending.minedash.core.auth.UserStore;
 import dev.mending.minedash.core.config.ConfigManager;
 import dev.mending.minedash.core.config.MineDashConfig;
 import dev.mending.minedash.core.metrics.MetricsCollector;
+import dev.mending.minedash.core.module.LoadedModule;
 import dev.mending.minedash.core.module.ModuleManager;
 import dev.mending.minedash.core.web.WebServer;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -48,6 +49,12 @@ public class MineDashPlugin extends JavaPlugin {
 
             moduleManager = new ModuleManager(this, dataDir, getLogger());
             moduleManager.loadAll();
+            for (LoadedModule module : moduleManager.getModules()) {
+                if (module.getIconWarning() != null) {
+                    getLogger().warning("Module '" + module.getInfo().getId() + "': icon ignored, "
+                            + module.getIconWarning());
+                }
+            }
 
             metrics = new MetricsCollector(this, getLogger());
             metrics.start();

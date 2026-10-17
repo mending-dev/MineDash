@@ -28,10 +28,13 @@ public final class AuthRoutes {
     private static final class UserInfo {
         final String username;
         final List<String> permissions;
+        /** Template for the player heads, "" if they are switched off. */
+        final String avatarUrl;
 
-        UserInfo(User user) {
+        UserInfo(User user, String avatarUrl) {
             this.username = user.username;
             this.permissions = new ArrayList<>(user.permissions);
+            this.avatarUrl = avatarUrl;
         }
     }
 
@@ -87,7 +90,7 @@ public final class AuthRoutes {
         setCookie(ctx, session.getToken(), false);
 
         logger.info(user.username + " logged in from " + ip);
-        Json.respond(ctx, new UserInfo(user));
+        Json.respond(ctx, new UserInfo(user, security.avatarUrl()));
     }
 
     private void logout(Context ctx) {
@@ -98,7 +101,7 @@ public final class AuthRoutes {
 
     private void me(Context ctx) {
         User user = ctx.attribute(ATTR_USER);
-        Json.respond(ctx, new UserInfo(user));
+        Json.respond(ctx, new UserInfo(user, security.avatarUrl()));
     }
 
     private void setCookie(Context ctx, String value, boolean expire) {

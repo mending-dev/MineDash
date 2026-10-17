@@ -1,6 +1,7 @@
 <script lang="ts">
   import { auth } from '../lib/auth.svelte';
   import { modules } from '../lib/modules.svelte';
+  import ModuleIcon from './ModuleIcon.svelte';
 
   let busy = $state<string | null>(null);
   let error = $state('');
@@ -50,6 +51,7 @@
       {#each modules.list as m (m.id)}
         <li class="rounded-xl border border-line bg-surface p-4">
           <div class="flex items-center gap-3">
+            <ModuleIcon name={m.name} icon={m.icon} class="h-10 w-10 text-base" />
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-medium">{m.name}</span>

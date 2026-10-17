@@ -177,6 +177,8 @@ export class Editing {
     private disposed = false;
     private draftTimer: number | undefined;
     private draftFirstChange = 0;
+    /** True from the moment the user gives up the unsaved text until the file is loaded again. No draft is written meanwhile. */
+    private discarding = false;
 
     constructor(explorer: Explorer) {
         this.explorer = explorer;
@@ -237,8 +239,12 @@ export class Editing {
     /** Loads the file from disk again and drops all unsaved changes, including the draft. */
     reloadFromDisk(): void {
         if (this.path === null) return;
+        // The old editor still holds the unsaved text until it is replaced. It must not write it back as a draft.
+        this.discarding = true;
+        this.dirty = false;
         this.dropDraft();
-        void this.load(this.path, 'keep');
+        // The draft is not restored on purpose, and it is removed once more when the file is there
+        void this.load(this.path, 'keep', false);
     }
 
     /** After a failed load: try the same file once more. */
@@ -248,8 +254,9 @@ export class Editing {
 
     /** Closes without asking. Used when the user already decided to give up the unsaved text. */
     discardAndClose(): void {
-        this.dropDraft();
+        this.discarding = true;
         this.dirty = false;
+        this.dropDraft();
         this.leaveByButton();
     }
 
@@ -299,17 +306,21 @@ export class Editing {
     flushDraft(snapshot?: Snapshot): void {
         window.clearTimeout(this.draftTimer);
         this.draftFirstChange = 0;
-        if (!this.dirty || this.readOnly || this.path === null || this.status !== 'ready') return;
+        if (this.discarding || !this.dirty || this.readOnly || this.path === null || this.status !== 'ready') return;
 
         const current = snapshot ?? this.controller?.snapshot();
         if (!current) return;
+        if (current.text === this.text) {
+            // Same as on disk: there is nothing to keep, and an older draft of this file would be outdated
+            this.dropDraft();
+            return;
+        }
         this.draftStatus = this.drafts.write(this.path, current.text, this.version);
         this.refreshDrafts();
     }
 
     /** Throws the restored draft away and shows the file as it is on disk. */
     discardDraft(): void {
-        this.dirty = false;
         this.reloadFromDisk();
     }
 
@@ -385,8 +396,12 @@ export class Editing {
         if (!request) return;
         this.leave = null;
         // The text is given up on purpose, so no draft is kept either
+        this.discarding = true;
+        this.dirty = false;
         this.dropDraft();
         request.proceed();
+        // Leaving or loading ends the discarding itself. If the request did neither, the editor goes on as before.
+        if (this.status === 'ready' && this.path !== null) this.discarding = false;
     }
 
     /** The user wants to save first. Only offered when the editor is about to close. */
@@ -513,7 +528,7 @@ export class Editing {
         this.leave = { reason, proceed, stay };
     }
 
-    private async load(path: string, mode: LoadMode): Promise<void> {
+    private async load(path: string, mode: LoadMode, restore = true): Promise<void> {
         const id = ++this.requestId;
         this.path = path;
         this.dirty = false;
@@ -543,11 +558,14 @@ export class Editing {
             this.version = file.version;
             this.size = file.size;
             this.separator = detectSeparator(file.content);
-            this.restoreDraft(path, file);
+            if (restore) this.restoreDraft(path, file);
+            else if (!this.readOnly) this.removeDraft(path);
+            this.discarding = false;
             this.session++;
             this.status = 'ready';
         } catch (error) {
             if (id !== this.requestId || this.disposed) return;
+            this.discarding = false;
             this.loadError = describe(error);
             this.loadStatus = statusOf(error);
             this.status = 'error';
@@ -616,6 +634,7 @@ export class Editing {
         this.requestId++;
         window.clearTimeout(this.draftTimer);
         this.draftFirstChange = 0;
+        this.discarding = false;
         this.path = null;
         this.status = 'idle';
         this.loadError = '';

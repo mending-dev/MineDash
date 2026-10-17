@@ -20,11 +20,21 @@ public final class WebSecurity {
     private final boolean trustProxy;
     private final boolean secure;
     private final Set<String> allowedOrigins;
+    private final String avatarUrl;
+    /** Origin the player heads are loaded from, or null if heads are switched off. */
+    private final String avatarOrigin;
 
     public WebSecurity(MineDashConfig config) {
         this.trustProxy = config.web.trustProxy;
         this.secure = config.auth.secureCookie;
         this.allowedOrigins = new HashSet<>(config.web.allowedOrigins);
+        this.avatarUrl = config.web.avatarUrl == null ? "" : config.web.avatarUrl;
+        this.avatarOrigin = config.web.avatarOrigin();
+    }
+
+    /** Template for the player heads, or an empty string if they are switched off. */
+    public String avatarUrl() {
+        return avatarUrl;
     }
 
     /** Sets the security headers. Runs for every response. */
@@ -96,7 +106,8 @@ public final class WebSecurity {
                 + "script-src 'self'; "
                 // Module bundles inject their CSS at runtime
                 + "style-src 'self' 'unsafe-inline'; "
-                + "img-src 'self' data:; "
+                // Player heads come from one more host, the one in web.avatarUrl
+                + "img-src 'self' data:" + (avatarOrigin == null ? "" : " " + avatarOrigin) + "; "
                 + "font-src 'self'; "
                 + connect + "; "
                 + "object-src 'none'; "

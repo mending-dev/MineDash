@@ -77,6 +77,8 @@ public final class ModuleRoutes {
         final List<WidgetView> widgets;
         final String state;
         final String error;
+        /** Cleaned SVG markup of the icon, or null if the module has none. */
+        final String icon;
         /** URL of the frontend entry file, only present while the module is enabled. */
         final String frontend;
 
@@ -94,6 +96,7 @@ public final class ModuleRoutes {
             }
             this.state = module.getState().name().toLowerCase(Locale.ROOT);
             this.error = module.getError();
+            this.icon = module.getIcon();
             this.frontend = module.getState() == ModuleState.ENABLED && info.getFrontend() != null
                     ? ASSET_PREFIX + info.getId() + "/" + info.getFrontend()
                     : null;
